@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Морской бой для Мари</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0b1f33;
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .box {
+      text-align: center;
+      background: #102942;
+      padding: 24px;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 1100px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+      position: relative;
+    }
+
+    h1, h2 {
+      margin-top: 0;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 12px;
+      border: none;
+      border-radius: 10px;
+      background: #1d6fa5;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      background: #5f7486;
+      cursor: not-allowed;
+      opacity: 0.8;
+    }
+
+    input {
+      width: 100%;
+      padding: 14px;
+      margin-top: 12px;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+
+    .top-controls,
+    .ship-controls,
+    .direction-controls {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .top-controls {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .ship-controls,
+    .direction-controls {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .ship-btn.active,
+    .direction-btn.active {
+      outline: 3px solid #ffd166;
+    }
+
+    #status,
+    #roomCode {
+      margin-top: 12px;
+      font-size: 18px;
+    }
+
+    #roomCode {
+      font-weight: bold;
+      color: #ffd166;
+    }
+
+    .legend {
+      margin-top: 14px;
+      color: #cfe3f4;
+    }
+
+    .boards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 36px;
+      margin-top: 24px;
+      align-items: start;
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(10, 34px);
+      gap: 4px;
+      justify-content: center;
+      margin-top: 12px;
+      min-height: 380px;
+    }
+
+    .cell {
+      width: 34px;
+      height: 34px;
+      background: #d9ecff;
+      border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+    }
+
+    .cell.ship {
+      background: #4f5d75;
+    }
+
+    .cell.hit {
+      background: #d62828;
+    }
+
+    .cell.miss {
+      background: #7fb3d5;
+    }
+
+    .cell.sunk {
+      background: #9d0208;
+    }
+
+    .cell.sunk::after {
+      content: "✕";
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: bold;
+      color: white;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+
+    .overlay.show {
+      display: flex;
+    }
+
+    .modal {
+      background: #102942;
+      padding: 28px;
+      border-radius: 16px;
+      width: 90%;
+      max-width: 360px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+      text-align: center;
+    }
+
+    .modal h2 {
+      margin-bottom: 8px;
+    }
+
+    .modal p {
+      margin: 0 0 16px;
+      color: #cfe3f4;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Морской бой для Мари</h1>
+
+    <div class="top-controls">
+      <button id="createRoomBtn">Создать комнату</button>
+      <input id="roomInput" placeholder="Код комнаты" value="4221" />
+      <button id="joinRoomBtn">Войти</button>
+    </div>
+
+    <button id="readyBtn">Готов</button>
+
+    <div id="status">Расставь корабли и нажми "Готов"</div>
+    <div id="roomCode"></div>
+
+    <div class="ship-controls">
+      <button id="ship4Btn" class="ship-btn">4 клетки (осталось: 1)</button>
+      <button id="ship3Btn" class="ship-btn">3 клетки (осталось: 2)</button>
+      <button id="ship2Btn" class="ship-btn">2 клетки (осталось: 3)</button>
+      <button id="ship1Btn" class="ship-btn">1 клетка (осталось: 4)</button>
+    </div>
+
+    <div class="direction-controls">
+      <button id="horizontalBtn" class="direction-btn">Горизонтально</button>
+      <button id="verticalBtn" class="direction-btn">Вертикально</button>
+    </div>
+
+    <div class="legend">
+      Слева — твоё поле. Справа — поле врага для стрельбы.
+    </div>
+
+    <div class="boards">
+      <div>
+        <h2>Твоё поле</h2>
+        <div id="yourBoard" class="board"></div>
+      </div>
+
+      <div>
+        <h2>Поле врага</h2>
+        <div id="enemyBoard" class="board"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="gameOverOverlay" class="overlay">
+    <div class="modal">
+      <h2 id="gameOverTitle">Игра окончена</h2>
+      <p id="gameOverText"></p>
+      <button id="restartBtn">Начать заново</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    const createRoomBtn = document.getElementById("createRoomBtn");
+    const joinRoomBtn = document.getElementById("joinRoomBtn");
+    const roomInput = document.getElementById("roomInput");
+    const readyBtn = document.getElementById("readyBtn");
+    const status = document.getElementById("status");
+    const roomCode = document.getElementById("roomCode");
+
+    const yourBoardEl = document.getElementById("yourBoard");
+    const enemyBoardEl = document.getElementById("enemyBoard");
+
+    const ship4Btn = document.getElementById("ship4Btn");
+    const ship3Btn = document.getElementById("ship3Btn");
+    const ship2Btn = document.getElementById("ship2Btn");
+    const ship1Btn = document.getElementById("ship1Btn");
+
+    const horizontalBtn = document.getElementById("horizontalBtn");
+    const verticalBtn = document.getElementById("verticalBtn");
+
+    const gameOverOverlay = document.getElementById("gameOverOverlay");
+    const gameOverTitle = document.getElementById("gameOverTitle");
+    const gameOverText = document.getElementById("gameOverText");
+    const restartBtn = document.getElementById("restartBtn");
+
+    let yourShips = Array(100).fill(false);
+    let yourShipGroups = [];
+
+    let yourShots = Array(100).fill(null);
+    let enemyShots = Array(100).fill(null);
+
+    let enemySunk = Array(100).fill(false);
+    let yourSunk = Array(100).fill(false);
+
+    let battleMode = false;
+    let yourTurn = false;
+    let setupLocked = false;
+
+    let selectedShipSize = 4;
+    let direction = "horizontal";
+
+    let remainingShips = {
+      4: 1,
+      3: 2,
+      2: 3,
+      1: 4
+    };
+
+    let joinClicked = false;
+
+    function getRow(index) {
+      return Math.floor(index / 10);
+    }
+
+    function getCol(index) {
+      return index % 10;
+    }
+
+    function isInsideBoard(row, col) {
+      return row >= 0 && row < 10 && col >= 0 && col < 10;
+    }
+
+    function getShipIndexes(startIndex, length) {
+      const indexes = [];
+      for (let i = 0; i < length; i++) {
+        const currentIndex = direction === "horizontal"
+          ? startIndex + i
+          : startIndex + i * 10;
+        indexes.push(currentIndex);
+      }
+      return indexes;
+    }
+
+    function hasNeighborShip(indexes) {
+      for (const index of indexes) {
+        const row = getRow(index);
+        const col = getCol(index);
+
+        for (let dRow = -1; dRow <= 1; dRow++) {
+          for (let dCol = -1; dCol <= 1; dCol++) {
+            const newRow = row + dRow;
+            const newCol = col + dCol;
+
+            if (!isInsideBoard(newRow, newCol)) continue;
+
+            const neighborIndex = newRow * 10 + newCol;
+
+            if (indexes.includes(neighborIndex)) continue;
+            if (yourShips[neighborIndex]) return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    function canPlaceShip(startIndex, length) {
+      if (direction === "horizontal") {
+        const row = getRow(startIndex);
+        const startCol = getCol(startIndex);
+
+        if (startCol + length > 10) return false;
+
+        for (let i = 0; i < length; i++) {
+          const currentIndex = startIndex + i;
+          if (getRow(currentIndex) !== row) return false;
+          if (yourShips[currentIndex]) return false;
+        }
+      }
+
+      if (direction === "vertical") {
+        const startRow = getRow(startIndex);
+
+        if (startRow + length > 10) return false;
+
+        for (let i = 0; i < length; i++) {
+          const currentIndex = startIndex + i * 10;
+          if (currentIndex >= 100) return false;
+          if (yourShips[currentIndex]) return false;
+        }
+      }
+
+      const indexes = getShipIndexes(startIndex, length);
+      if (hasNeighborShip(indexes)) return false;
+
+      return true;
+    }
+
+    function updateShipButtons() {
+      ship4Btn.textContent = `4 клетки (осталось: ${remainingShips[4]})`;
+      ship3Btn.textContent = `3 клетки (осталось: ${remainingShips[3]})`;
+      ship2Btn.textContent = `2 клетки (осталось: ${remainingShips[2]})`;
+      ship1Btn.textContent = `1 клетка (осталось: ${remainingShips[1]})`;
+
+      ship4Btn.disabled = setupLocked || remainingShips[4] === 0;
+      ship3Btn.disabled = setupLocked || remainingShips[3] === 0;
+      ship2Btn.disabled = setupLocked || remainingShips[2] === 0;
+      ship1Btn.disabled = setupLocked || remainingShips[1] === 0;
+
+      ship4Btn.classList.remove("active");
+      ship3Btn.classList.remove("active");
+      ship2Btn.classList.remove("active");
+      ship1Btn.classList.remove("active");
+
+      if (selectedShipSize === 4 && remainingShips[4] > 0) ship4Btn.classList.add("active");
+      if (selectedShipSize === 3 && remainingShips[3] > 0) ship3Btn.classList.add("active");
+      if (selectedShipSize === 2 && remainingShips[2] > 0) ship2Btn.classList.add("active");
+      if (selectedShipSize === 1 && remainingShips[1] > 0) ship1Btn.classList.add("active");
+    }
+
+    function updateDirectionButtons() {
+      horizontalBtn.classList.remove("active");
+      verticalBtn.classList.remove("active");
+
+      if (direction === "horizontal") horizontalBtn.classList.add("active");
+      if (direction === "vertical") verticalBtn.classList.add("active");
+
+      horizontalBtn.disabled = setupLocked;
+      verticalBtn.disabled = setupLocked;
+    }
+
+    function renderYourBoard() {
+      yourBoardEl.innerHTML = "";
+
+      for (let i = 0; i < 100; i++) {
+        const cell = document.createElement("div");
+        cell.classList.add("cell");
+
+        if (yourShips[i]) cell.classList.add("ship");
+        if (enemyShots[i] === "miss") cell.classList.add("miss");
+        if (enemyShots[i] === "hit") cell.classList.add("hit");
+        if (yourSunk[i]) cell.classList.add("sunk");
+
+        cell.addEventListener("click", () => {
+          if (setupLocked) return;
+          tryPlaceShip(i);
+        });
+
+        yourBoardEl.appendChild(cell);
+      }
+    }
+
+    function renderEnemyBoard() {
+      enemyBoardEl.innerHTML = "";
+
+      for (let i = 0; i < 100; i++) {
+        const cell = document.createElement("div");
+        cell.classList.add("cell");
+
+        if (yourShots[i] === "miss") cell.classList.add("miss");
+        if (yourShots[i] === "hit") cell.classList.add("hit");
+        if (enemySunk[i]) cell.classList.add("sunk");
+
+        cell.addEventListener("click", () => {
+          if (!battleMode) return;
+          if (!yourTurn) return;
+          if (yourShots[i] !== null) return;
+
+          socket.emit("shoot", i);
+        });
+
+        enemyBoardEl.appendChild(cell);
+      }
+    }
+
+    function renderBoards() {
+      renderYourBoard();
+      renderEnemyBoard();
+    }
+
+    function markSunkOnEnemyBoard(cells, around) {
+      for (const cell of cells) {
+        enemySunk[cell] = true;
+        yourShots[cell] = "hit";
+      }
+
+      for (const cell of around) {
+        if (yourShots[cell] === null) {
+          yourShots[cell] = "miss";
+        }
+      }
+    }
+
+    function markSunkOnYourBoard(cells, around) {
+      for (const cell of cells) {
+        yourSunk[cell] = true;
+        enemyShots[cell] = "hit";
+      }
+
+      for (const cell of around) {
+        if (enemyShots[cell] === null) {
+          enemyShots[cell] = "miss";
+        }
+      }
+    }
+
+    function tryPlaceShip(startIndex) {
+      const length = selectedShipSize;
+
+      if (remainingShips[length] <= 0) {
+        status.textContent = `Корабли на ${length} клетк. уже закончились`;
+        return;
+      }
+
+      if (!canPlaceShip(startIndex, length)) {
+        status.textContent = "Нельзя ставить корабли вплотную, по диагонали или за пределами поля";
+        return;
+      }
+
+      const indexes = getShipIndexes(startIndex, length);
+
+      for (const idx of indexes) {
+        yourShips[idx] = true;
+      }
+
+      yourShipGroups.push(indexes);
+
+      socket.emit("setShips", {
+        ships: yourShips,
+        shipGroups: yourShipGroups
+      });
+
+      renderBoards();
+
+      remainingShips[length] -= 1;
+      updateShipButtons();
+
+      const left = remainingShips[4] + remainingShips[3] + remainingShips[2] + remainingShips[1];
+      status.textContent = left === 0 ? 'Все корабли расставлены. Нажми "Готов"' : "Корабль поставлен";
+    }
+
+    function showGameOver(result) {
+      gameOverOverlay.classList.add("show");
+
+      if (result === "win") {
+        gameOverTitle.textContent = "Ты выиграл";
+        gameOverText.textContent = "Все корабли противника уничтожены";
+      } else {
+        gameOverTitle.textContent = "Ты проиграл";
+        gameOverText.textContent = "Твои корабли уничтожены";
+      }
+    }
+
+    createRoomBtn.addEventListener("click", () => {
+      joinClicked = false;
+      socket.emit("createRoom");
+    });
+
+    joinRoomBtn.addEventListener("click", () => {
+      if (joinClicked) return;
+      joinClicked = true;
+
+      const code = roomInput.value.trim();
+
+      if (!code) {
+        status.textContent = "Введи код комнаты";
+        joinClicked = false;
+        return;
+      }
+
+      status.textContent = "Подключаемся к комнате " + code + "...";
+      socket.emit("joinRoom", code);
+    });
+
+    readyBtn.addEventListener("click", () => {
+      const left = remainingShips[4] + remainingShips[3] + remainingShips[2] + remainingShips[1];
+
+      if (left > 0) {
+        status.textContent = "Сначала расставь все корабли";
+        return;
+      }
+
+      status.textContent = "Нажал Готов. Отправляем на сервер...";
+      setupLocked = true;
+      readyBtn.disabled = true;
+      updateShipButtons();
+      updateDirectionButtons();
+      socket.emit("playerReady");
+    });
+
+    restartBtn.addEventListener("click", () => {
+      window.location.reload();
+    });
+
+    ship4Btn.addEventListener("click", () => {
+      selectedShipSize = 4;
+      updateShipButtons();
+    });
+
+    ship3Btn.addEventListener("click", () => {
+      selectedShipSize = 3;
+      updateShipButtons();
+    });
+
+    ship2Btn.addEventListener("click", () => {
+      selectedShipSize = 2;
+      updateShipButtons();
+    });
+
+    ship1Btn.addEventListener("click", () => {
+      selectedShipSize = 1;
+      updateShipButtons();
+    });
+
+    horizontalBtn.addEventListener("click", () => {
+      direction = "horizontal";
+      updateDirectionButtons();
+    });
+
+    verticalBtn.addEventListener("click", () => {
+      direction = "vertical";
+      updateDirectionButtons();
+    });
+
+    socket.on("roomCreated", (code) => {
+      roomCode.textContent = "Код комнаты: " + code;
+      status.textContent = "Комната создана. Расставь корабли";
+      joinClicked = false;
+    });
+
+    socket.on("roomJoined", (code) => {
+      roomCode.textContent = "Ты вошёл в комнату: " + code;
+      status.textContent = "Ты в комнате. Расставь корабли";
+      joinClicked = false;
+    });
+
+    socket.on("yourShipsUpdated", (ships) => {
+      yourShips = ships.map(Boolean);
+      renderBoards();
+    });
+
+    socket.on("statusMessage", (message) => {
+      status.textContent = message;
+
+      if (
+        message.includes("Неверный код") ||
+        message.includes("Сначала создай комнату")
+      ) {
+        joinClicked = false;
+      }
+    });
+
+    socket.on("battleStarted", ({ yourTurn: turn }) => {
+      battleMode = true;
+      yourTurn = turn;
+      status.textContent = yourTurn ? "Бой начался. Твой ход" : "Бой начался. Ход соперника";
+      renderBoards();
+    });
+
+    socket.on("shotResult", ({ index, hit, sunk, sunkShip, around }) => {
+      yourShots[index] = hit ? "hit" : "miss";
+
+      if (sunk) {
+        markSunkOnEnemyBoard(sunkShip || [], around || []);
+        status.textContent = "Корабль уничтожен!";
+      } else {
+        status.textContent = hit ? "Попадание! Ходи ещё" : "Мимо";
+      }
+
+      renderBoards();
+    });
+
+    socket.on("enemyShotResult", ({ index, hit, sunk, sunkShip, around }) => {
+      enemyShots[index] = hit ? "hit" : "miss";
+
+      if (sunk) {
+        markSunkOnYourBoard(sunkShip || [], around || []);
+        status.textContent = "Твой корабль уничтожен";
+      } else {
+        status.textContent = hit ? "В тебя попали" : "Соперник промахнулся";
+      }
+
+      renderBoards();
+    });
+
+    socket.on("turnUpdate", ({ yourTurn: turn }) => {
+      yourTurn = turn;
+      status.textContent = yourTurn ? "Твой ход" : "Ход соперника";
+    });
+
+    socket.on("gameOver", (result) => {
+      battleMode = false;
+      showGameOver(result);
+    });
+
+    renderBoards();
+    updateShipButtons();
+    updateDirectionButtons();
+  </script>
+</body>
+</html>
