@@ -1,23 +1,26 @@
-const path = require("path");
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
+const path = require("path");
 const { Server } = require("socket.io");
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 
-const CLIENT_DIR = path.join(__dirname, "..", "client");
-
-app.use(express.static(CLIENT_DIR));
+const clientPath = path.join(__dirname, "..", "client");
+app.use(express.static(clientPath));
 
 app.get("/", (req, res) => {
-  res.sendFile(path.join(CLIENT_DIR, "index.html"));
+  res.sendFile(path.join(clientPath, "index.html"));
 });
 
 const server = http.createServer(app);
+
 const io = new Server(server, {
-  cors: { origin: "*" }
+  cors: {
+    origin: "*"
+  }
 });
 
 const ROOM_ID = "4221";
@@ -33,10 +36,8 @@ const room = {
 function createPlayerState() {
   return {
     ships: Array(100).fill(false),
-    hits: Array(100).fill(false),
     shots: Array(100).fill(false),
-    ready: false,
-    shipGroups: []
+    ready: false
   };
 }
 
@@ -53,67 +54,18 @@ function getOpponentId(socketId) {
   return getActivePlayerIds().find((id) => id !== socketId) || null;
 }
 
-function normalizeShipGroups(shipGroups) {
-  if (!Array.isArray(shipGroups)) return [];
-
-  return shipGroups
-    .filter((group) => Array.isArray(group) && group.length > 0)
-    .map((group) =>
-      group
-        .map((value) => Number(value))
-        .filter((value) => Number.isInteger(value) && value >= 0 && value < 100)
-    )
-    .filter((group) => group.length > 0);
-}
-
-function getShipGroupByCell(player, index) {
-  if (!player || !Array.isArray(player.shipGroups)) return null;
-  return player.shipGroups.find((group) => group.includes(index)) || null;
-}
-
-function getAroundIndexes(shipCells) {
-  const around = new Set();
-  const shipSet = new Set(shipCells);
-
-  for (const cell of shipCells) {
-    const row = Math.floor(cell / 10);
-    const col = cell % 10;
-
-    for (let dRow = -1; dRow <= 1; dRow++) {
-      for (let dCol = -1; dCol <= 1; dCol++) {
-        const newRow = row + dRow;
-        const newCol = col + dCol;
-
-        if (newRow < 0 || newRow >= 10 || newCol < 0 || newCol >= 10) continue;
-
-        const newIndex = newRow * 10 + newCol;
-        if (shipSet.has(newIndex)) continue;
-
-        around.add(newIndex);
-      }
-    }
-  }
-
-  return Array.from(around);
-}
-
-function clearRoomCompletely() {
-  room.hostId = null;
-  room.guestId = null;
-  room.players = {};
-  resetGameState();
-}
-
 io.on("connection", (socket) => {
   console.log("Игрок подключился:", socket.id);
 
   socket.on("createRoom", () => {
-    clearRoomCompletely();
-
     room.hostId = socket.id;
+    room.guestId = null;
+    room.players = {};
     room.players[socket.id] = createPlayerState();
+    resetGameState();
 
     socket.join(ROOM_ID);
+
     socket.emit("roomCreated", ROOM_ID);
     socket.emit("statusMessage", "Комната создана. Код: 4221. Ждём второго игрока");
 
@@ -142,6 +94,7 @@ io.on("connection", (socket) => {
     resetGameState();
 
     socket.join(ROOM_ID);
+
     socket.emit("roomJoined", ROOM_ID);
     socket.emit("statusMessage", "Ты вошёл в комнату 4221. Расставь корабли");
 
@@ -152,32 +105,23 @@ io.on("connection", (socket) => {
     console.log("Второй игрок вошёл:", socket.id);
   });
 
-  socket.on("setShips", (payload) => {
-    const player = room.players[socket.id];
-    if (!player) return;
-    if (player.ready) return;
+  socket.on("setShips", (ships) => {
+    if (!room.players[socket.id]) return;
+    if (room.players[socket.id].ready) return;
+    if (!Array.isArray(ships) || ships.length !== 100) return;
 
-    const ships = payload && Array.isArray(payload.ships) ? payload.ships : null;
-    const shipGroups = payload ? normalizeShipGroups(payload.shipGroups) : [];
+    room.players[socket.id].ships = ships.map(Boolean);
+    io.to(socket.id).emit("yourShipsUpdated", room.players[socket.id].ships);
 
-    if (!ships || ships.length !== 100) return;
-
-    player.ships = ships.map(Boolean);
-    player.shipGroups = shipGroups;
-    player.hits = Array(100).fill(false);
-    player.shots = Array(100).fill(false);
-
-    io.to(socket.id).emit("yourShipsUpdated", player.ships);
     console.log("Корабли обновлены у:", socket.id);
   });
 
   socket.on("playerReady", () => {
     console.log("playerReady от:", socket.id);
 
-    const player = room.players[socket.id];
-    if (!player) return;
+    if (!room.players[socket.id]) return;
 
-    player.ready = true;
+    room.players[socket.id].ready = true;
 
     const ids = getActivePlayerIds();
     console.log("Активные игроки:", ids);
@@ -197,13 +141,13 @@ io.on("connection", (socket) => {
       return;
     }
 
+    console.log("СТАРТ БОЯ");
+
     room.gameStarted = true;
     room.turn = ids[0];
 
     io.to(ids[0]).emit("battleStarted", { yourTurn: true });
     io.to(ids[1]).emit("battleStarted", { yourTurn: false });
-
-    console.log("СТАРТ БОЯ");
   });
 
   socket.on("shoot", (index) => {
@@ -216,7 +160,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    if (!Number.isInteger(index) || index < 0 || index > 99) return;
+    if (typeof index !== "number" || index < 0 || index > 99) return;
 
     const opponentId = getOpponentId(socket.id);
     if (!opponentId) return;
@@ -234,40 +178,14 @@ io.on("connection", (socket) => {
     shooter.shots[index] = true;
 
     const hit = opponent.ships[index] === true;
-    let sunk = false;
-    let sunkShip = [];
-    let around = [];
-
     if (hit) {
-      opponent.hits[index] = true;
-
-      const shipGroup = getShipGroupByCell(opponent, index);
-      if (shipGroup && shipGroup.every((cell) => opponent.hits[cell])) {
-        sunk = true;
-        sunkShip = [...shipGroup];
-        around = getAroundIndexes(shipGroup);
-      }
+      opponent.ships[index] = false;
     }
 
-    io.to(socket.id).emit("shotResult", {
-      index,
-      hit,
-      sunk,
-      sunkShip,
-      around
-    });
+    io.to(socket.id).emit("shotResult", { index, hit });
+    io.to(opponentId).emit("enemyShotResult", { index, hit });
 
-    io.to(opponentId).emit("enemyShotResult", {
-      index,
-      hit,
-      sunk,
-      sunkShip,
-      around
-    });
-
-    const opponentShipsLeft = opponent.ships.some((hasShip, cellIndex) => {
-      return hasShip && !opponent.hits[cellIndex];
-    });
+    const opponentShipsLeft = opponent.ships.some(Boolean);
 
     if (!opponentShipsLeft) {
       io.to(socket.id).emit("gameOver", "win");
@@ -291,19 +209,17 @@ io.on("connection", (socket) => {
     delete room.players[socket.id];
 
     if (room.hostId === socket.id) {
-      clearRoomCompletely();
+      room.hostId = null;
+      room.guestId = null;
+      room.players = {};
+      resetGameState();
       return;
     }
 
     if (room.guestId === socket.id) {
       room.guestId = null;
       resetGameState();
-
       if (room.hostId) {
-        const host = room.players[room.hostId];
-        if (host) {
-          host.ready = false;
-        }
         io.to(room.hostId).emit("statusMessage", "Второй игрок отключился");
       }
     }
@@ -312,6 +228,6 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 3000;
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log("Сервер на", PORT);
+server.listen(PORT, () => {
+  console.log(`Сервер запущен на порту ${PORT}`);
 });
